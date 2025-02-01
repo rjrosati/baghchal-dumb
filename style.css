@@ -1,0 +1,49 @@
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: sans-serif;
+  background: #f2f2f2;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 {
+  margin: 0;
+}
+
+#info {
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(5, 60px);
+  grid-template-rows: repeat(5, 60px);
+  gap: 2px;
+}
+
+/* Each board cell */
+.cell {
+  width: 60px;
+  height: 60px;
+  background: #e0e0e0;
+  border: 1px solid #333;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Style for pieces (we now use emojis) */
+.piece {
+  font-size: 32px;
+  pointer-events: none;
+}
+
+/* Highlight a selected goat during movement phase */
+.selected {
+  outline: 3px solid blue;
+}
