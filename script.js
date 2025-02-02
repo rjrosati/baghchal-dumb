@@ -140,14 +140,18 @@ function capitalize(word) {
 }
 
 // ============================
-// Get Valid Moves
+// Helper Functions for Simulation
 // ============================
-// Returns an array of move objects for the piece at (r, c)
-// Each move object contains:
-//   from: {r, c}, to: {r, c}, capture: Boolean, (optionally captured: {r, c})
-function getValidMoves(r, c, piece) {
+
+// Clone a board (deep copy of the 2D array)
+function cloneBoard(board) {
+  return board.map(row => row.slice());
+}
+
+// Modified getValidMoves accepts an optional board parameter (defaulting to boardState)
+function getValidMoves(r, c, piece, board = boardState) {
   const moves = [];
-  // All eight directions (vertical, horizontal, and diagonal)
+  // All eight directions (vertical, horizontal, diagonal)
   const directions = [
     { dx: -1, dy:  0 },
     { dx:  1, dy:  0 },
@@ -164,23 +168,23 @@ function getValidMoves(r, c, piece) {
     // Check boundaries
     if (newR < 0 || newR >= gridSize || newC < 0 || newC >= gridSize) continue;
     // Simple move: destination must be empty
-    if (boardState[newR][newC] === null) {
+    if (board[newR][newC] === null) {
       moves.push({
         from: { r: parseInt(r), c: parseInt(c) },
         to: { r: newR, c: newC },
         capture: false
       });
     }
-    // For tigers, also check for capture (jump) moves:
+    // For tigers, check for capture (jump) moves:
     if (piece === 'tiger') {
       const midR  = parseInt(r) + d.dx;
       const midC  = parseInt(c) + d.dy;
       const jumpR = parseInt(r) + 2 * d.dx;
       const jumpC = parseInt(c) + 2 * d.dy;
-      // Check boundaries for the jump destination
+      // Check boundaries for jump destination
       if (jumpR < 0 || jumpR >= gridSize || jumpC < 0 || jumpC >= gridSize) continue;
       // For a capture, the adjacent cell must contain a goat and the landing cell must be empty.
-      if (boardState[midR][midC] === 'goat' && boardState[jumpR][jumpC] === null) {
+      if (board[midR][midC] === 'goat' && board[jumpR][jumpC] === null) {
         moves.push({
           from: { r: parseInt(r), c: parseInt(c) },
           to: { r: jumpR, c: jumpC },
@@ -191,6 +195,20 @@ function getValidMoves(r, c, piece) {
     }
   }
   return moves;
+}
+
+// Evaluate a board state by summing the number of valid moves available to all tigers.
+function evaluateTigerMoves(board) {
+  let count = 0;
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      if (board[r][c] === 'tiger') {
+        const moves = getValidMoves(r, c, 'tiger', board);
+        count += moves.length;
+      }
+    }
+  }
+  return count;
 }
 
 // ============================
@@ -340,41 +358,82 @@ function tigerAIMove() {
 }
 
 // ============================
-// Goat AI Move (for AI-controlled goat)
+// Improved Goat AI Move (for AI-controlled goat)
 // ============================
 function goatAIMove() {
   if (gameOver) return;
-  // Placement Phase: if not all goats are placed.
+  
+  // ---------- Placement Phase ----------
   if (goatsPlaced < totalGoats) {
     const emptyCells = [];
     for (let r = 0; r < gridSize; r++) {
       for (let c = 0; c < gridSize; c++) {
-        if (boardState[r][c] === null) emptyCells.push({ r, c });
+        if (boardState[r][c] === null) {
+          emptyCells.push({ r, c });
+        }
       }
     }
     if (emptyCells.length > 0) {
-      const chosen = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+      // Evaluate each empty cell by simulating the placement
+      let bestScore = Infinity;
+      let bestCells = [];
+      for (const cell of emptyCells) {
+        const simBoard = cloneBoard(boardState);
+        simBoard[cell.r][cell.c] = 'goat';
+        const score = evaluateTigerMoves(simBoard);
+        if (score < bestScore) {
+          bestScore = score;
+          bestCells = [cell];
+        } else if (score === bestScore) {
+          bestCells.push(cell);
+        }
+      }
+      const chosen = bestCells[Math.floor(Math.random() * bestCells.length)];
       boardState[chosen.r][chosen.c] = 'goat';
       goatsPlaced++;
       updateBoardUI();
     }
-  } else {
-    // Movement Phase: find all goat moves.
-    let goatMoves = [];
-    for (let r = 0; r < gridSize; r++) {
-      for (let c = 0; c < gridSize; c++) {
-        if (boardState[r][c] === 'goat') {
-          const moves = getValidMoves(r, c, 'goat');
-          if (moves.length > 0) goatMoves.push(...moves);
+    if (checkWinConditions()) return;
+    switchTurn();
+    return;
+  }
+  
+  // ---------- Movement Phase ----------
+  // Gather all possible goat moves.
+  let goatMoves = [];
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      if (boardState[r][c] === 'goat') {
+        const moves = getValidMoves(r, c, 'goat');
+        if (moves.length > 0) {
+          // Tag each move with its origin (for simulation)
+          moves.forEach(m => m.from = { r, c });
+          goatMoves.push(...moves);
         }
       }
     }
-    if (goatMoves.length > 0) {
-      const chosenMove = goatMoves[Math.floor(Math.random() * goatMoves.length)];
-      boardState[chosenMove.to.r][chosenMove.to.c] = 'goat';
-      boardState[chosenMove.from.r][chosenMove.from.c] = null;
-      updateBoardUI();
+  }
+  if (goatMoves.length > 0) {
+    // Evaluate each goat move by simulating the move and counting tiger moves.
+    let bestScore = Infinity;
+    let bestMoves = [];
+    for (const move of goatMoves) {
+      const simBoard = cloneBoard(boardState);
+      // Execute the move on the simulated board.
+      simBoard[move.to.r][move.to.c] = 'goat';
+      simBoard[move.from.r][move.from.c] = null;
+      const score = evaluateTigerMoves(simBoard);
+      if (score < bestScore) {
+        bestScore = score;
+        bestMoves = [move];
+      } else if (score === bestScore) {
+        bestMoves.push(move);
+      }
     }
+    const chosenMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+    boardState[chosenMove.to.r][chosenMove.to.c] = 'goat';
+    boardState[chosenMove.from.r][chosenMove.from.c] = null;
+    updateBoardUI();
   }
   if (checkWinConditions()) return;
   switchTurn();
