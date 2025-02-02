@@ -2,16 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Mobile viewport optimization -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Baghchal Game</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Role selection modal -->
+  <div id="role-selection" class="modal">
+    <div class="modal-content">
+      <h2>Select Your Role</h2>
+      <button id="play-as-goat">Play as Goat</button>
+      <button id="play-as-tiger">Play as Tiger</button>
+    </div>
+  </div>
+
   <h1>Baghchal</h1>
-  <!-- Game information -->
+  <!-- Game info (turns, messages) -->
   <div id="info"></div>
   <!-- Game board -->
   <div id="board"></div>
-  <!-- Restart button (hidden until game over) -->
+  <!-- Restart button (shown when game over) -->
   <button id="restart" style="display:none;">Restart Game</button>
 
   <script src="script.js"></script>

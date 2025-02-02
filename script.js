@@ -1,31 +1,58 @@
-// Get references to DOM elements
-const boardEl   = document.getElementById('board');
-const infoEl    = document.getElementById('info');
-const restartEl = document.getElementById('restart');
+// DOM references
+const boardEl    = document.getElementById('board');
+const infoEl     = document.getElementById('info');
+const restartEl  = document.getElementById('restart');
+const roleSelect = document.getElementById('role-selection');
+const playAsGoat = document.getElementById('play-as-goat');
+const playAsTiger= document.getElementById('play-as-tiger');
 
+// Game settings
 const gridSize   = 5;
 const totalGoats = 20;
 
-let boardState   = []; // 2D array: each cell is null, 'goat', or 'tiger'
-let goatsPlaced  = 0;
+// Game state variables
+let boardState    = []; // 2D array: each cell is null, 'goat', or 'tiger'
+let goatsPlaced   = 0;
 let goatsCaptured = 0;
-let currentTurn  = 'goat'; // "goat" or "tiger"
-let selectedGoat = null;  // For goat movement phase
-let gameOver     = false;
+let currentTurn   = 'goat';  // 'goat' or 'tiger'
+let gameOver      = false;
+let selectedPiece = null;    // For movement-phase selection
+let playerRole    = null;    // Will be set to 'goat' or 'tiger'
 
-// Initialize the board and game state
+// ============================
+// Role Selection & Game Setup
+// ============================
+playAsGoat.addEventListener('click', () => {
+  playerRole = 'goat';
+  roleSelect.style.display = 'none';
+  initBoard();
+});
+playAsTiger.addEventListener('click', () => {
+  playerRole = 'tiger';
+  roleSelect.style.display = 'none';
+  initBoard();
+});
+
+// Restart button
+restartEl.onclick = initBoard;
+
+// ============================
+// Initialize Board and State
+// ============================
 function initBoard() {
-  // Reset state variables
   boardEl.innerHTML = '';
   boardState    = [];
   goatsPlaced   = 0;
   goatsCaptured = 0;
-  currentTurn   = 'goat';
-  selectedGoat  = null;
+  selectedPiece = null;
   gameOver      = false;
+  
+  // Standard rule: goats always move first.
+  currentTurn   = 'goat';
+  updateInfo();
   restartEl.style.display = 'none';
 
-  // Create grid cells and initialize boardState to null
+  // Create grid and initialize board state
   for (let r = 0; r < gridSize; r++) {
     boardState[r] = [];
     for (let c = 0; c < gridSize; c++) {
@@ -39,7 +66,7 @@ function initBoard() {
     }
   }
 
-  // Place the four tigers at the four corners
+  // Place four tigers in the corners (these never change)
   const tigerPositions = [
     { r: 0, c: 0 },
     { r: 0, c: gridSize - 1 },
@@ -51,10 +78,20 @@ function initBoard() {
   });
 
   updateBoardUI();
-  updateInfo();
+
+  // If goats are controlled by AI (i.e. when playerRole === 'tiger'),
+  // then let the AI make the goat move first.
+  if (currentTurn !== playerRole) {
+    setTimeout(() => {
+      if (currentTurn === 'goat') goatAIMove();
+      else tigerAIMove();
+    }, 500);
+  }
 }
 
-// Update the visual board to match boardState
+// ============================
+// Board UI and Info Updates
+// ============================
 function updateBoardUI() {
   for (let cell of boardEl.children) {
     const r = cell.dataset.row;
@@ -65,40 +102,52 @@ function updateBoardUI() {
     if (piece) {
       const pieceEl = document.createElement('div');
       pieceEl.classList.add('piece');
-      // Use emojis for pieces
+      // Use emojis: goat emoji for goats, tiger emoji for tigers
       pieceEl.textContent = piece === 'goat' ? '🐐' : '🐯';
       cell.appendChild(pieceEl);
     }
   }
-  // Highlight the selected goat (if any)
-  if (selectedGoat) {
-    const { r, c } = selectedGoat;
+  // Highlight selected piece if one is chosen
+  if (selectedPiece) {
+    const { r, c } = selectedPiece;
     const cell = document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
     if (cell) cell.classList.add('selected');
   }
 }
 
-// Update the information message (turn and phase)
 function updateInfo() {
-  if (gameOver) return; // Do not update info if game is over
-
-  if (currentTurn === 'goat') {
-    if (goatsPlaced < totalGoats) {
-      infoEl.textContent = `Goat's turn: Place a goat (${goatsPlaced}/${totalGoats} placed)`;
-    } else {
-      infoEl.textContent = `Goat's turn: Select and move a goat`;
-    }
+  if (gameOver) return;
+  // Determine whose turn it is and whether it’s yours or the AI’s turn.
+  let turnMsg = '';
+  if (currentTurn === playerRole) {
+    turnMsg += `Your turn as ${capitalize(playerRole)}. `;
   } else {
-    infoEl.textContent = `Tiger's turn: AI is thinking...`;
+    turnMsg += `AI's turn as ${capitalize(currentTurn)}. `;
   }
+  // For goat phase, show placement count.
+  if (currentTurn === 'goat' && goatsPlaced < totalGoats) {
+    turnMsg += `Place a goat (${goatsPlaced}/${totalGoats} placed).`;
+  } else if (currentTurn === 'goat') {
+    turnMsg += `Select and move a goat.`;
+  } else {
+    turnMsg += `Select and move a tiger.`;
+  }
+  infoEl.textContent = turnMsg;
 }
 
-// Return an array of valid moves for a piece at (r, c)
-// For goats: one step in any direction to an empty cell.
-// For tigers: one step OR a jump (capture) move if an adjacent goat is in the way.
+function capitalize(word) {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+// ============================
+// Get Valid Moves
+// ============================
+// Returns an array of move objects for the piece at (r, c)
+// Each move object contains:
+//   from: {r, c}, to: {r, c}, capture: Boolean, (optionally captured: {r, c})
 function getValidMoves(r, c, piece) {
   const moves = [];
-  // Eight directions: up, down, left, right, and diagonals.
+  // All eight directions (vertical, horizontal, and diagonal)
   const directions = [
     { dx: -1, dy:  0 },
     { dx:  1, dy:  0 },
@@ -109,33 +158,30 @@ function getValidMoves(r, c, piece) {
     { dx:  1, dy: -1 },
     { dx:  1, dy:  1 }
   ];
-
   for (const d of directions) {
     const newR = parseInt(r) + d.dx;
     const newC = parseInt(c) + d.dy;
-    // Check board boundaries
+    // Check boundaries
     if (newR < 0 || newR >= gridSize || newC < 0 || newC >= gridSize) continue;
-
-    // Simple adjacent move (if destination is empty)
+    // Simple move: destination must be empty
     if (boardState[newR][newC] === null) {
-      moves.push({ 
+      moves.push({
         from: { r: parseInt(r), c: parseInt(c) },
         to: { r: newR, c: newC },
-        capture: false 
+        capture: false
       });
     }
-
-    // For tigers, check for capture moves (jumping over a goat)
+    // For tigers, also check for capture (jump) moves:
     if (piece === 'tiger') {
       const midR  = parseInt(r) + d.dx;
       const midC  = parseInt(c) + d.dy;
       const jumpR = parseInt(r) + 2 * d.dx;
       const jumpC = parseInt(c) + 2 * d.dy;
-      // Ensure jump destination is on the board
+      // Check boundaries for the jump destination
       if (jumpR < 0 || jumpR >= gridSize || jumpC < 0 || jumpC >= gridSize) continue;
-      // The adjacent cell must contain a goat and the landing cell must be empty
+      // For a capture, the adjacent cell must contain a goat and the landing cell must be empty.
       if (boardState[midR][midC] === 'goat' && boardState[jumpR][jumpC] === null) {
-        moves.push({ 
+        moves.push({
           from: { r: parseInt(r), c: parseInt(c) },
           to: { r: jumpR, c: jumpC },
           capture: true,
@@ -147,65 +193,115 @@ function getValidMoves(r, c, piece) {
   return moves;
 }
 
-// Handle clicks on board cells
+// ============================
+// Handle Cell Clicks (Player Moves)
+// ============================
 function onCellClick(e) {
-  if (gameOver || currentTurn !== 'goat') return;
+  // Ignore clicks if game over or if it’s not the player's turn.
+  if (gameOver || currentTurn !== playerRole) return;
   
   const cell = e.currentTarget;
   const r = parseInt(cell.dataset.row);
   const c = parseInt(cell.dataset.col);
 
-  // ----- Goat Placement Phase -----
-  if (goatsPlaced < totalGoats) {
-    if (boardState[r][c] !== null) return; // Cell already occupied
-    boardState[r][c] = 'goat';
-    goatsPlaced++;
-    updateBoardUI();
-    // Check win conditions in case a tiger is now trapped
-    if (checkWinConditions()) return;
-    // After placing a goat, switch to tiger's turn (AI move)
-    currentTurn = 'tiger';
-    updateInfo();
-    setTimeout(tigerMove, 500);
-    return;
-  }
-
-  // ----- Goat Movement Phase -----
-  // If no goat is selected, try to select one.
-  if (!selectedGoat) {
-    if (boardState[r][c] === 'goat') {
-      selectedGoat = { r, c };
-      updateBoardUI();
-    }
-    return;
-  } else {
-    // If a goat is clicked again, change the selection.
-    if (boardState[r][c] === 'goat') {
-      selectedGoat = { r, c };
-      updateBoardUI();
-      return;
-    }
-    // Attempt to move the selected goat to the clicked empty cell.
-    const validMoves = getValidMoves(selectedGoat.r, selectedGoat.c, 'goat');
-    const move = validMoves.find(m => m.to.r === r && m.to.c === c);
-    if (move) {
+  // ----- GOAT MOVES -----
+  if (currentTurn === 'goat') {
+    // Placement Phase: if not all goats have been placed, clicking an empty cell places a goat.
+    if (goatsPlaced < totalGoats) {
+      if (boardState[r][c] !== null) return; // must be empty
       boardState[r][c] = 'goat';
-      boardState[selectedGoat.r][selectedGoat.c] = null;
-      selectedGoat = null;
+      goatsPlaced++;
       updateBoardUI();
       if (checkWinConditions()) return;
-      currentTurn = 'tiger';
-      updateInfo();
-      setTimeout(tigerMove, 500);
+      switchTurn();
+      return;
+    }
+    // Movement Phase:
+    if (!selectedPiece) {
+      // Select a goat piece if one is present in the cell.
+      if (boardState[r][c] === 'goat') {
+        selectedPiece = { r, c };
+        updateBoardUI();
+      }
+      return;
+    } else {
+      // If clicking on another goat, change selection.
+      if (boardState[r][c] === 'goat') {
+        selectedPiece = { r, c };
+        updateBoardUI();
+        return;
+      }
+      // Otherwise, attempt to move the selected goat.
+      const validMoves = getValidMoves(selectedPiece.r, selectedPiece.c, 'goat');
+      const move = validMoves.find(m => m.to.r === r && m.to.c === c);
+      if (move) {
+        boardState[r][c] = 'goat';
+        boardState[selectedPiece.r][selectedPiece.c] = null;
+        selectedPiece = null;
+        updateBoardUI();
+        if (checkWinConditions()) return;
+        switchTurn();
+      }
+    }
+  }
+  
+  // ----- TIGER MOVES -----
+  if (currentTurn === 'tiger') {
+    // There is no placement phase for tigers.
+    if (!selectedPiece) {
+      // Select a tiger piece if present.
+      if (boardState[r][c] === 'tiger') {
+        selectedPiece = { r, c };
+        updateBoardUI();
+      }
+      return;
+    } else {
+      // If a tiger is clicked again, change selection.
+      if (boardState[r][c] === 'tiger') {
+        selectedPiece = { r, c };
+        updateBoardUI();
+        return;
+      }
+      // Attempt to move the selected tiger.
+      const validMoves = getValidMoves(selectedPiece.r, selectedPiece.c, 'tiger');
+      const move = validMoves.find(m => m.to.r === r && m.to.c === c);
+      if (move) {
+        boardState[r][c] = 'tiger';
+        boardState[selectedPiece.r][selectedPiece.c] = null;
+        if (move.capture) {
+          boardState[move.captured.r][move.captured.c] = null;
+          goatsCaptured++;
+        }
+        selectedPiece = null;
+        updateBoardUI();
+        if (checkWinConditions()) return;
+        switchTurn();
+      }
     }
   }
 }
 
-// Tiger (AI) move
-function tigerMove() {
-  if (gameOver) return;
+// ============================
+// Switch Turn and Invoke AI if Needed
+// ============================
+function switchTurn() {
+  // Alternate turns: goats always move first in a standard game.
+  currentTurn = currentTurn === 'goat' ? 'tiger' : 'goat';
+  updateInfo();
+  // If it is now the AI’s turn, trigger the AI move.
+  if (currentTurn !== playerRole && !gameOver) {
+    setTimeout(() => {
+      if (currentTurn === 'goat') goatAIMove();
+      else tigerAIMove();
+    }, 500);
+  }
+}
 
-  // Gather all valid moves for all tiger pieces
+// ============================
+// Tiger AI Move (for AI-controlled tiger)
+// ============================
+function tigerAIMove() {
+  if (gameOver) return;
   let tigerMoves = [];
   for (let r = 0; r < gridSize; r++) {
     for (let c = 0; c < gridSize; c++) {
@@ -217,15 +313,12 @@ function tigerMove() {
       }
     }
   }
-
-  // If no tiger moves exist, goats win.
   if (tigerMoves.length === 0) {
     gameOver = true;
     infoEl.textContent = "Goats win! Tigers are trapped!";
     showRestartButton();
     return;
   }
-
   // Prefer capture moves if available.
   const captureMoves = tigerMoves.filter(move => move.capture);
   let chosenMove;
@@ -234,8 +327,6 @@ function tigerMove() {
   } else {
     chosenMove = tigerMoves[Math.floor(Math.random() * tigerMoves.length)];
   }
-
-  // Execute the chosen move.
   const { from, to, capture } = chosenMove;
   boardState[to.r][to.c] = 'tiger';
   boardState[from.r][from.c] = null;
@@ -244,15 +335,54 @@ function tigerMove() {
     goatsCaptured++;
   }
   updateBoardUI();
-
-  // Check win conditions after tiger moves.
   if (checkWinConditions()) return;
-  
-  currentTurn = 'goat';
-  updateInfo();
+  switchTurn();
 }
 
-// Check if a win condition is met. Returns true if the game is over.
+// ============================
+// Goat AI Move (for AI-controlled goat)
+// ============================
+function goatAIMove() {
+  if (gameOver) return;
+  // Placement Phase: if not all goats are placed.
+  if (goatsPlaced < totalGoats) {
+    const emptyCells = [];
+    for (let r = 0; r < gridSize; r++) {
+      for (let c = 0; c < gridSize; c++) {
+        if (boardState[r][c] === null) emptyCells.push({ r, c });
+      }
+    }
+    if (emptyCells.length > 0) {
+      const chosen = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+      boardState[chosen.r][chosen.c] = 'goat';
+      goatsPlaced++;
+      updateBoardUI();
+    }
+  } else {
+    // Movement Phase: find all goat moves.
+    let goatMoves = [];
+    for (let r = 0; r < gridSize; r++) {
+      for (let c = 0; c < gridSize; c++) {
+        if (boardState[r][c] === 'goat') {
+          const moves = getValidMoves(r, c, 'goat');
+          if (moves.length > 0) goatMoves.push(...moves);
+        }
+      }
+    }
+    if (goatMoves.length > 0) {
+      const chosenMove = goatMoves[Math.floor(Math.random() * goatMoves.length)];
+      boardState[chosenMove.to.r][chosenMove.to.c] = 'goat';
+      boardState[chosenMove.from.r][chosenMove.from.c] = null;
+      updateBoardUI();
+    }
+  }
+  if (checkWinConditions()) return;
+  switchTurn();
+}
+
+// ============================
+// Check Win Conditions
+// ============================
 function checkWinConditions() {
   // Tiger wins if 5 goats have been captured.
   if (goatsCaptured >= 5) {
@@ -261,8 +391,8 @@ function checkWinConditions() {
     showRestartButton();
     return true;
   }
-
-  // Goats win if no tiger has any valid moves.
+  
+  // Goats win if none of the tigers can move.
   let tigerCanMove = false;
   for (let r = 0; r < gridSize; r++) {
     for (let c = 0; c < gridSize; c++) {
@@ -285,11 +415,13 @@ function checkWinConditions() {
   return false;
 }
 
-// Show the restart button and attach a click listener.
+// ============================
+// Show Restart Button
+// ============================
 function showRestartButton() {
   restartEl.style.display = 'block';
-  restartEl.onclick = initBoard;
 }
 
-// Initialize the game when the page loads
-initBoard();
+// ============================
+// End of Script: Game starts after role selection.
+// ============================
